@@ -1,4 +1,15 @@
 import { format, parseISO } from 'date-fns';
+import { type ClassValue, clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+/**
+ * Merge Tailwind CSS classes with proper precedence
+ * @param inputs - Class values to merge
+ * @returns Merged className string
+ */
+export const cn = (...inputs: ClassValue[]): string => {
+  return twMerge(clsx(inputs));
+};
 
 /**
  * Format currency amount in ILS
