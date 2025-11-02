@@ -1,5 +1,25 @@
 // Global type definitions for Tik-Tax
 
+// Configuration Types
+export interface Config {
+  // API Configuration
+  apiBaseUrl: string;
+
+  // External Services
+  googleCloudVisionApiKey: string;
+  stripePublicKey: string;
+  awsS3Bucket: string;
+
+  // Feature Flags
+  enableAnalytics: boolean;
+  maintenanceMode: boolean;
+
+  // Environment
+  isDevelopment: boolean;
+  isProduction: boolean;
+  isTest: boolean;
+}
+
 // User Types
 export interface User {
   id: string;
