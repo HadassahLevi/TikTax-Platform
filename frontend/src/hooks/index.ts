@@ -4,3 +4,4 @@
  */
 
 export { useAuth, useRequireAuth, useSubscriptionGate } from './useAuth';
+export { useToast } from './useToast';
