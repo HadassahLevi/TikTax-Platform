@@ -11,6 +11,8 @@ export type { CardProps } from './Card';
 export { default as StatCard } from './StatCard';
 export type { StatCardProps } from './StatCard';
 
+export { default as Modal, useModal } from './Modal';
+export type { ModalProps } from './Modal';
+
 // Example for future components:
-// export { default as Modal } from './Modal';
 // export { default as Dropdown } from './Dropdown';
