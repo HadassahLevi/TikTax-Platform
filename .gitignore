@@ -157,8 +157,9 @@ build/
 *.swp
 *~
 
-# Git setup scripts (temporary)
-git-setup.bat
+# Git setup scripts (temporary - should not be committed)
+*.bat
+commit-message.txt
 
 # ====== Documentation ======
 # Keep all markdown files
