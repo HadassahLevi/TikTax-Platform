@@ -8,7 +8,8 @@ export type { ReceiptUploadProps } from './ReceiptUpload';
 export { default as ReceiptProcessing } from './ReceiptProcessing';
 export type { ReceiptProcessingProps } from './ReceiptProcessing';
 
+export { default as ReceiptDetail } from './ReceiptDetail';
+
 // Future receipt components:
 // export { default as CameraCapture } from './CameraCapture';
-// export { default as ReceiptDetail } from './ReceiptDetail';
 // export { default as ReceiptForm } from './ReceiptForm';
