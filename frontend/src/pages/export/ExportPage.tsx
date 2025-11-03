@@ -23,9 +23,15 @@ import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
 import { useReceipt } from '@/hooks/useReceipt';
+import { useAuth } from '@/hooks/useAuth';
 import { formatAmount, formatDateIL, DEFAULT_CATEGORIES } from '@/types/receipt.types';
-import type { ExportRequest } from '@/types/receipt.types';
-import * as receiptService from '@/services/receipt.service';
+import { 
+  generateExcelExport, 
+  generateCSVExport, 
+  generateExportFilename, 
+  downloadBlob 
+} from '@/services/export.service';
+import { generatePDFExport } from '@/services/pdf-export.service';
 
 // ============================================================================
 // TYPES
@@ -69,6 +75,7 @@ const DATE_PRESETS: DatePresetOption[] = [
 
 export const ExportPage: React.FC = () => {
   const { receipts } = useReceipt();
+  const { user } = useAuth();
   
   // Export settings state
   const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('excel');
@@ -167,37 +174,58 @@ export const ExportPage: React.FC = () => {
     setIsExporting(true);
     setExportProgress(0);
     
-    const exportRequest: ExportRequest = {
-      format: selectedFormat,
-      filters: {
-        startDate,
-        endDate,
-        categoryIds: selectedCategories.length > 0 ? selectedCategories : undefined
-      },
-      includeImages
-    };
-    
     try {
-      // Simulate progress with interval
-      const progressInterval = setInterval(() => {
-        setExportProgress(prev => Math.min(prev + 10, 90));
-      }, 200);
+      // Simulate progress
+      setExportProgress(20);
       
-      const response = await receiptService.exportReceipts(exportRequest);
+      let blob: Blob;
+      let filename: string;
+      const businessName = user?.businessName || 'עסק';
       
-      clearInterval(progressInterval);
+      // Generate export based on format
+      switch (selectedFormat) {
+        case 'excel':
+          blob = generateExcelExport(filteredReceipts, businessName);
+          filename = generateExportFilename('excel', businessName, startDate, endDate);
+          setExportProgress(80);
+          break;
+          
+        case 'csv':
+          blob = generateCSVExport(filteredReceipts);
+          filename = generateExportFilename('csv', businessName, startDate, endDate);
+          setExportProgress(80);
+          break;
+          
+        case 'pdf':
+          setExportProgress(40);
+          blob = await generatePDFExport(
+            filteredReceipts, 
+            businessName,
+            includeImages
+          );
+          filename = generateExportFilename('pdf', businessName, startDate, endDate);
+          setExportProgress(80);
+          break;
+          
+        default:
+          throw new Error('Invalid export format');
+      }
+      
+      setExportProgress(90);
+      
+      // Download file
+      downloadBlob(blob, filename);
+      
       setExportProgress(100);
       
-      // Download file in new tab
-      window.open(response.downloadUrl, '_blank');
-      
-      // Reset state after 2 seconds
+      // Reset state after 1 second
       setTimeout(() => {
         setIsExporting(false);
         setExportProgress(0);
-      }, 2000);
+      }, 1000);
       
     } catch (error) {
+      console.error('Export failed:', error);
       setIsExporting(false);
       setExportProgress(0);
       alert('שגיאה בייצוא הנתונים. נסה שוב.');

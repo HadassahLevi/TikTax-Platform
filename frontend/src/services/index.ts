@@ -24,6 +24,9 @@ export * from './receipt.service';
 // Export all export service functions
 export * from './export.service';
 
+// Export PDF export service functions
+export * from './pdf-export.service';
+
 // Export all receipt service functions
 export * from './receipt.service';
 
