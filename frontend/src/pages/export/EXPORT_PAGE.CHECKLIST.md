@@ -115,13 +115,18 @@
 
 ## 🔌 API Integration
 
-### Export Service
-- [x] Import from `@/services/receipt.service`
-- [x] Call `exportReceipts()` function
-- [x] Build ExportRequest object
-- [x] Handle ExportResponse
-- [x] Open download URL in new tab
-- [x] Error handling with Hebrew messages
+### Export Service ✅
+- [x] Created `/src/services/export.service.ts`
+- [x] Installed dependencies (xlsx, @types/xlsx)
+- [x] Implemented `generateExcelExport()` function
+- [x] Implemented `generateCSVExport()` function
+- [x] Implemented `generateExportFilename()` helper
+- [x] Implemented `downloadBlob()` helper
+- [x] Updated services index.ts
+- [x] Full Hebrew RTL support
+- [x] Multi-sheet Excel workbooks
+- [x] CSV with BOM for Hebrew
+- [x] Comprehensive documentation
 
 ### Request Structure
 - [x] Format field
@@ -321,7 +326,9 @@
 
 ## ✅ Sign-Off
 
-**Component Status**: ✅ Production Ready (pending routing integration)
+**Component Status**: ✅ Production Ready
+
+**Export Service Status**: ✅ Production Ready (Excel & CSV generation implemented)
 
 **Created**: November 3, 2025  
 **Last Updated**: November 3, 2025  

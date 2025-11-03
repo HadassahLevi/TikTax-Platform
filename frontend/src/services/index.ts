@@ -21,5 +21,11 @@ export { default as authService } from './auth.service';
 // Export all receipt service functions
 export * from './receipt.service';
 
+// Export all export service functions
+export * from './export.service';
+
+// Export all receipt service functions
+export * from './receipt.service';
+
 // Export receipt service as default for convenience
 export { default as receiptService } from './receipt.service';
