@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     # Sentry (error tracking)
     SENTRY_DSN: str = ""
     
+    # Logging
+    LOG_LEVEL: str = "INFO"
+    
+    # Environment
+    ENVIRONMENT: str = "development"  # development, staging, production
+    
     # File Upload
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10MB
     ALLOWED_EXTENSIONS: List[str] = ["jpg", "jpeg", "png", "pdf"]

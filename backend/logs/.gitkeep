@@ -1,0 +1,4 @@
+# Log files are generated at runtime
+# This file keeps the logs directory in git
+*.log
+!.gitkeep

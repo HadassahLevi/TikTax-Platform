@@ -1,9 +1,16 @@
 """
 Tik-Tax API - Main Application Entry Point
-FastAPI application initialization with middleware, routes, and error handlers
+FastAPI application initialization with:
+- Production-grade logging (JSON structured)
+- Error monitoring (Sentry)
+- Global exception handling
+- Request tracking middleware
+- Security middleware
 """
 
 import logging
+import uuid
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
@@ -14,17 +21,16 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.core.exceptions import TikTaxException
+from app.core.logging_config import setup_logging
+from app.core.monitoring import init_sentry, set_user_context
 from app.api.v1.router import api_router
 from app.db.session import engine
 from app.middleware.rate_limit import rate_limit_middleware
-from app.middleware.error_handler import error_handler_middleware
+from app.middleware.error_handler import global_exception_handler, tiktax_exception_handler
 from app.middleware.audit_log import audit_log_middleware
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+# Initialize structured logging
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -32,10 +38,16 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """
     Application lifespan events
-    Handles startup and shutdown tasks
+    Handles startup and shutdown tasks with proper monitoring
     """
     # Startup
-    logger.info("🚀 Starting Tik-Tax API...")
+    logger.info("🚀 Starting Tik-Tax API...", extra={
+        "environment": settings.ENVIRONMENT,
+        "version": settings.VERSION
+    })
+    
+    # Initialize Sentry monitoring
+    init_sentry()
     
     # Test database connection
     try:
@@ -45,7 +57,7 @@ async def lifespan(app: FastAPI):
         db.close()
         logger.info("✅ Database connection successful")
     except Exception as e:
-        logger.error(f"❌ Database connection failed: {e}")
+        logger.error(f"❌ Databasexxxxxxction failed: {e}", exc_info=True)
         raise
     
     logger.info("✅ Tik-Tax API started successfully")
@@ -82,7 +94,72 @@ app.add_middleware(
 
 # Add custom middleware
 # Note: Middleware is executed in reverse order (bottom to top)
-# So error_handler_middleware wraps everything, including rate limiting and audit logging
+
+# Request ID and logging middleware
+@app.middleware("http")
+async def request_tracking_middleware(request: Request, call_next):
+    """
+    Add request ID and track request duration
+    Provides context for structured logging
+    """
+    # Generate unique request ID
+    request_id = str(uuid.uuid4())
+    request.state.request_id = request_id
+    
+    # Track request start time
+    start_time = time.time()
+    
+    # Log incoming request
+    logger.info(
+        f"📨 {request.method} {request.url.path}",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "ip_address": request.client.host if request.client else None
+        }
+    )
+    
+    try:
+        # Process request
+        response = await call_next(request)
+        
+        # Calculate duration
+        duration_ms = round((time.time() - start_time) * 1000, 2)
+        
+        # Log response
+        logger.info(
+            f"✅ {request.method} {request.url.path} - {response.status_code}",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": duration_ms
+            }
+        )
+        
+        # Add request ID to response headers
+        response.headers["X-Request-ID"] = request_id
+        
+        return response
+        
+    except Exception as e:
+        # Calculate duration even for errors
+        duration_ms = round((time.time() - start_time) * 1000, 2)
+        
+        logger.error(
+            f"❌ {request.method} {request.url.path} - Error: {str(e)}",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "duration_ms": duration_ms
+            },
+            exc_info=True
+        )
+        raise
+
 
 # Audit logging middleware (logs all API requests)
 @app.middleware("http")
@@ -97,85 +174,11 @@ async def rate_limit(request: Request, call_next):
     """Apply rate limiting to API requests"""
     return await rate_limit_middleware(request, call_next)
 
-
-# Global error handler middleware (catches all exceptions)
-@app.middleware("http")
-async def error_handler(request: Request, call_next):
-    """Handle all exceptions globally with Hebrew messages"""
-    return await error_handler_middleware(request, call_next)
-
-
-# Request logging middleware
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    """Log all incoming requests"""
-    logger.info(f"📨 {request.method} {request.url.path}")
-    
-    try:
-        response = await call_next(request)
-        logger.info(f"✅ {request.method} {request.url.path} - {response.status_code}")
-        return response
-    except Exception as e:
-        logger.error(f"❌ {request.method} {request.url.path} - Error: {str(e)}")
-        raise
-
-
-# Exception handlers
-@app.exception_handler(TikTaxException)
-async def tiktax_exception_handler(request: Request, exc: TikTaxException):
-    """Handle custom Tik-Tax exceptions"""
-    logger.warning(f"TikTax Exception: {exc.detail}")
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=exc.detail
-    )
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle Pydantic validation errors"""
-    errors = exc.errors()
-    logger.warning(f"Validation Error: {errors}")
-    
-    # Extract field names from errors
-    field_errors = [error.get("loc")[-1] for error in errors]
-    
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "message": "Validation failed",
-            "hebrew_message": f"שגיאת ולידציה בשדות: {', '.join(field_errors)}",
-            "details": errors
-        }
-    )
-
-
-@app.exception_handler(SQLAlchemyError)
-async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
-    """Handle database errors"""
-    logger.error(f"Database Error: {str(exc)}")
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "message": "Database error occurred",
-            "hebrew_message": "אירעה שגיאת מסד נתונים. אנא נסה שוב מאוחר יותר",
-            "details": None
-        }
-    )
-
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """Handle all unhandled exceptions"""
-    logger.error(f"Unhandled Exception: {str(exc)}", exc_info=True)
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "message": "Internal server error",
-            "hebrew_message": "אירעה שגיאה בשרת. אנא נסה שוב מאוחר יותר",
-            "details": None
-        }
-    )
+# Register exception handlers
+app.add_exception_handler(TikTaxException, tiktax_exception_handler)
+app.add_exception_handler(RequestValidationError, global_exception_handler)
+app.add_exception_handler(SQLAlchemyError, global_exception_handler)
+app.add_exception_handler(Exception, global_exception_handler)
 
 
 # Include API router
