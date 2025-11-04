@@ -61,18 +61,20 @@ def client(db_session) -> Generator:
 @pytest.fixture
 def test_user(db_session):
     """Create test user"""
-    from app.models.user import User
+    from app.models.user import User, SubscriptionPlan
     from app.core.security import get_password_hash
     
     user = User(
-        id="test-user-id",
         email="test@example.com",
-        password_hash=get_password_hash("TestPassword123"),
-        phone="+972501234567",
-        first_name="Test",
-        last_name="User",
+        hashed_password=get_password_hash("password123"),
+        full_name="Test User",
+        id_number="123456789",
+        phone_number="+972501234567",
+        is_phone_verified=True,
         is_active=True,
-        is_verified=True
+        subscription_plan=SubscriptionPlan.FREE,
+        receipt_limit=50,
+        receipts_used_this_month=0
     )
     
     db_session.add(user)
