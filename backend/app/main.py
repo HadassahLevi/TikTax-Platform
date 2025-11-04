@@ -16,6 +16,8 @@ from app.core.config import settings
 from app.core.exceptions import TikTaxException
 from app.api.v1.router import api_router
 from app.db.session import engine
+from app.middleware.rate_limit import rate_limit_middleware
+from app.middleware.error_handler import error_handler_middleware
 
 # Configure logging
 logging.basicConfig(
@@ -75,6 +77,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Add custom middleware
+# Note: Middleware is executed in reverse order (bottom to top)
+# So error_handler_middleware wraps everything, including rate limiting
+
+# Rate limiting middleware (applies to all API endpoints)
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    """Apply rate limiting to API requests"""
+    return await rate_limit_middleware(request, call_next)
+
+
+# Global error handler middleware (catches all exceptions)
+@app.middleware("http")
+async def error_handler(request: Request, call_next):
+    """Handle all exceptions globally with Hebrew messages"""
+    return await error_handler_middleware(request, call_next)
 
 
 # Request logging middleware
