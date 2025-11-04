@@ -779,3 +779,140 @@ async def search_receipts(
     )
 
 
+@router.post("/{receipt_id}/sign", status_code=status.HTTP_200_OK)
+async def sign_receipt(
+    receipt_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Apply digital signature to receipt PDF
+    
+    ⚠️ NOT IMPLEMENTED - Awaiting CA Partnership
+    
+    This endpoint will be available after:
+    1. Legal verification (₪5,000-10,000, 1-2 weeks)
+    2. CA partnership agreement (e-Sign/Personalsign/Certsign)
+    3. API credentials configuration
+    
+    Returns:
+        HTTP 501 Not Implemented with Hebrew message
+        
+    Future response (after implementation):
+        {
+            "message": "הקבלה נחתמה דיגיטלית בהצלחה",
+            "signed_url": "https://...",
+            "certificate_id": "cert_123456",
+            "signature_timestamp": "2025-11-04T12:00:00Z"
+        }
+    """
+    from app.services.signature_service import signature_service
+    
+    # Check if signature service is available
+    if not signature_service.is_signature_available():
+        logger.info(
+            f"Digital signature requested for receipt {receipt_id} "
+            f"but service not available (user {current_user.id})"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail={
+                "error": "service_unavailable",
+                "message": "חתימה דיגיטלית תהיה זמינה בקרוב",
+                "description": "אנחנו עובדים על שותפות עם רשות אישורים ישראלית",
+                "status": signature_service.get_service_status()
+            }
+        )
+    
+    # Verify receipt exists and belongs to user
+    receipt = db.query(Receipt).filter(
+        Receipt.id == receipt_id,
+        Receipt.user_id == current_user.id
+    ).first()
+    
+    if not receipt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="קבלה לא נמצאה"
+        )
+    
+    # Only approved receipts can be signed
+    if receipt.status != ReceiptStatus.APPROVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ניתן לחתום רק על קבלות מאושרות"
+        )
+    
+    # Check if already signed
+    if receipt.is_digitally_signed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="קבלה זו כבר חתומה דיגיטלית"
+        )
+    
+    try:
+        # Generate PDF (when implemented)
+        from app.services.pdf_service import pdf_service
+        pdf_content = pdf_service.generate_single_receipt_pdf(receipt)
+        
+        # Sign PDF (will raise NotImplementedError until CA integrated)
+        signed_pdf, certificate_id = await signature_service.sign_pdf(
+            pdf_content,
+            receipt.id,
+            current_user.id
+        )
+        
+        # Upload signed PDF to S3
+        signed_url, file_size = await storage_service.upload_file(
+            file_content=signed_pdf,
+            filename=f"signed_receipt_{receipt.id}.pdf",
+            user_id=current_user.id,
+            mime_type="application/pdf"
+        )
+        
+        # Update receipt with signature info
+        receipt.is_digitally_signed = True
+        receipt.signature_timestamp = datetime.utcnow()
+        receipt.signature_certificate_id = certificate_id
+        receipt.file_url = signed_url  # Update to signed version
+        
+        db.commit()
+        db.refresh(receipt)
+        
+        logger.info(
+            f"Receipt {receipt_id} signed digitally "
+            f"(certificate: {certificate_id}, user: {current_user.id})"
+        )
+        
+        return {
+            "message": "הקבלה נחתמה דיגיטלית בהצלחה",
+            "signed_url": signed_url,
+            "certificate_id": certificate_id,
+            "signature_timestamp": receipt.signature_timestamp.isoformat()
+        }
+        
+    except NotImplementedError as e:
+        # Expected error until CA integration complete
+        logger.warning(
+            f"Signature attempted but not implemented "
+            f"(receipt {receipt_id}, user {current_user.id}): {str(e)}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(
+            f"Signature failed for receipt {receipt_id} "
+            f"(user {current_user.id}): {str(e)}",
+            exc_info=True
+        )
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="שגיאה בחתימה הדיגיטלית"
+        )
+
+
+
+
