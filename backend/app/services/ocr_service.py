@@ -4,25 +4,40 @@ Google Cloud Vision API integration for receipt text extraction
 """
 
 from typing import Dict, Any
-import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class OCRService:
     """OCR service using Google Cloud Vision"""
     
-    @staticmethod
-    def extract_text_from_image(image_path: str) -> Dict[str, Any]:
+    async def extract_text_from_image(self, image_url: str) -> Dict[str, Any]:
         """
         Extract text from receipt image using Google Vision API
         
         Args:
-            image_path: Path to image file
+            image_url: S3 URL to image file
             
         Returns:
             Dictionary with extracted text and confidence scores
         """
         # TODO: Implement Google Vision OCR
-        pass
+        logger.info(f"OCR extraction started for: {image_url}")
+        
+        # Placeholder response
+        return {
+            'success': True,
+            'vendor_name': 'Sample Vendor',
+            'business_number': '123456789',
+            'receipt_number': 'RCP-001',
+            'receipt_date': None,
+            'total_amount': 100.0,
+            'vat_amount': 17.0,
+            'pre_vat_amount': 83.0,
+            'confidence_score': 0.85,
+            'raw_data': {}
+        }
     
     @staticmethod
     def parse_receipt_data(ocr_text: str) -> Dict[str, Any]:
@@ -37,3 +52,7 @@ class OCRService:
         """
         # TODO: Implement intelligent parsing for Israeli receipts
         pass
+
+
+# Global OCR service instance
+ocr_service = OCRService()
