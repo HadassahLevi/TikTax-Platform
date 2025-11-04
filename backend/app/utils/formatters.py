@@ -191,3 +191,62 @@ def parse_date_flexible(date_str: str) -> Optional[datetime]:
             continue
     
     return None
+
+
+def format_value_for_history(field_name: str, value) -> str:
+    """
+    Format field value for readable history display
+    Converts raw values to user-friendly Hebrew format
+    
+    Args:
+        field_name: Name of the field being formatted
+        value: Raw value from database
+        
+    Returns:
+        Formatted string for display in edit history
+    """
+    # Handle None/empty values
+    if value is None or value == "":
+        return "ריק"
+    
+    # Date fields
+    if field_name == 'receipt_date' and isinstance(value, datetime):
+        return format_israeli_date(value)
+    
+    # If value is a date string, try to parse and format
+    if field_name == 'receipt_date' and isinstance(value, str):
+        try:
+            date_obj = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            return format_israeli_date(date_obj)
+        except:
+            return value
+    
+    # Amount fields
+    if field_name in ['total_amount', 'vat_amount', 'pre_vat_amount']:
+        try:
+            amount = float(value)
+            return f"₪{format_amount(amount)}"
+        except (ValueError, TypeError):
+            return str(value)
+    
+    # Category ID (just show the number, frontend will map to name)
+    if field_name == 'category_id':
+        return f"קטגוריה #{value}"
+    
+    # Status field
+    if field_name == 'status':
+        status_map = {
+            'processing': 'בעיבוד',
+            'review': 'בבדיקה',
+            'approved': 'אושר',
+            'failed': 'נכשל',
+            'duplicate': 'כפול'
+        }
+        return status_map.get(str(value).lower(), str(value))
+    
+    # Boolean fields
+    if isinstance(value, bool):
+        return 'כן' if value else 'לא'
+    
+    # Default: convert to string
+    return str(value)

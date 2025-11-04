@@ -25,7 +25,9 @@ from app.schemas.receipt import (
     DuplicateCheckRequest,
     DuplicateCheckResponse,
     SearchResult,
-    SearchResponse
+    SearchResponse,
+    ReceiptEditHistory,
+    ReceiptHistoryResponse
 )
 from app.models.user import User
 from app.models.receipt import Receipt, ReceiptStatus
@@ -35,6 +37,8 @@ from app.services.storage_service import storage_service
 from app.services.ocr_service import ocr_service
 from app.services.receipt_service import receipt_service
 from app.utils.text_utils import normalize_hebrew_text
+from app.utils.formatters import format_value_for_history
+from app.utils.field_names import get_field_name_hebrew
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -362,9 +366,13 @@ async def update_receipt(
     """
     Update receipt data (during review process)
     
-    Records edit history for all changes
-    Can only edit receipts in REVIEW or DUPLICATE status
-    Recalculates VAT if amounts changed
+    Enhanced features:
+    - Records detailed edit history for all changes
+    - Formats values for readable history display
+    - Hebrew field names for user transparency
+    - Can only edit receipts in REVIEW or DUPLICATE status
+    - Recalculates VAT if amounts changed
+    - Tracks which fields were modified
     """
     receipt = db.query(Receipt).filter(
         Receipt.id == receipt_id,
@@ -385,34 +393,47 @@ async def update_receipt(
         )
     
     # Track changes for edit history
-    changes_made = False
+    changes_made = []
+    
     for field, new_value in update_data.dict(exclude_unset=True).items():
         if new_value is not None:
             old_value = getattr(receipt, field)
+            
+            # Only track if value actually changed
             if old_value != new_value:
-                # Record edit
+                # Format values for display in history
+                old_display = format_value_for_history(field, old_value)
+                new_display = format_value_for_history(field, new_value)
+                
+                # Record edit with formatted values
                 edit = ReceiptEdit(
                     receipt_id=receipt.id,
                     user_id=current_user.id,
                     field_name=field,
-                    old_value=str(old_value) if old_value else None,
-                    new_value=str(new_value)
+                    old_value=old_display,
+                    new_value=new_display
                 )
                 db.add(edit)
+                changes_made.append(field)
                 
-                # Update field
+                # Update field with actual value
                 setattr(receipt, field, new_value)
-                changes_made = True
     
     # Recalculate VAT if amounts changed
-    if any([update_data.total_amount, update_data.vat_amount, update_data.pre_vat_amount]):
+    if any(field in changes_made for field in ['total_amount', 'vat_amount', 'pre_vat_amount']):
         await receipt_service.recalculate_vat(receipt)
     
     if changes_made:
         receipt.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(receipt)
-        logger.info(f"Receipt {receipt_id} updated by user {current_user.id}")
+        
+        logger.info(
+            f"Receipt {receipt_id} updated by user {current_user.id}. "
+            f"Fields modified: {', '.join(changes_made)}"
+        )
+    else:
+        logger.info(f"Receipt {receipt_id} update called but no changes made")
     
     return await get_receipt(receipt_id, current_user, db)
 
@@ -505,6 +526,68 @@ async def delete_receipt(
     logger.info(f"Receipt {receipt_id} deleted by user {current_user.id}")
     
     return None
+
+
+@router.get("/{receipt_id}/history", response_model=ReceiptHistoryResponse)
+async def get_receipt_history(
+    receipt_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get complete edit history for a receipt
+    
+    Returns all changes made to receipt fields since creation.
+    Includes:
+    - Field name (English and Hebrew)
+    - Old and new values (formatted for display)
+    - Timestamp of each edit
+    - Total number of edits
+    
+    Used for:
+    - User transparency (what changed)
+    - Compliance audit trail
+    - OCR accuracy analysis
+    
+    Raises:
+        404: Receipt not found or doesn't belong to user
+    """
+    # Verify receipt exists and belongs to user
+    receipt = db.query(Receipt).filter(
+        Receipt.id == receipt_id,
+        Receipt.user_id == current_user.id
+    ).first()
+    
+    if not receipt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="קבלה לא נמצאה"
+        )
+    
+    # Get all edits for this receipt, ordered by most recent first
+    edits = db.query(ReceiptEdit).filter(
+        ReceiptEdit.receipt_id == receipt_id
+    ).order_by(ReceiptEdit.edited_at.desc()).all()
+    
+    # Convert to response format with Hebrew field names
+    edit_list = []
+    for edit in edits:
+        edit_list.append(ReceiptEditHistory(
+            id=edit.id,
+            field_name=edit.field_name,
+            field_name_hebrew=get_field_name_hebrew(edit.field_name),
+            old_value=edit.old_value,
+            new_value=edit.new_value,
+            edited_at=edit.edited_at
+        ))
+    
+    logger.info(f"Retrieved {len(edit_list)} edit history entries for receipt {receipt_id}")
+    
+    return ReceiptHistoryResponse(
+        receipt_id=receipt_id,
+        edits=edit_list,
+        total_edits=len(edit_list)
+    )
 
 
 @router.post("/{receipt_id}/retry", status_code=status.HTTP_202_ACCEPTED)

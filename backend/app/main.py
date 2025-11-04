@@ -18,6 +18,7 @@ from app.api.v1.router import api_router
 from app.db.session import engine
 from app.middleware.rate_limit import rate_limit_middleware
 from app.middleware.error_handler import error_handler_middleware
+from app.middleware.audit_log import audit_log_middleware
 
 # Configure logging
 logging.basicConfig(
@@ -81,7 +82,14 @@ app.add_middleware(
 
 # Add custom middleware
 # Note: Middleware is executed in reverse order (bottom to top)
-# So error_handler_middleware wraps everything, including rate limiting
+# So error_handler_middleware wraps everything, including rate limiting and audit logging
+
+# Audit logging middleware (logs all API requests)
+@app.middleware("http")
+async def audit_log(request: Request, call_next):
+    """Log all API requests for compliance and debugging"""
+    return await audit_log_middleware(request, call_next)
+
 
 # Rate limiting middleware (applies to all API endpoints)
 @app.middleware("http")

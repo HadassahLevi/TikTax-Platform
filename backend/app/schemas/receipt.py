@@ -357,3 +357,23 @@ class SearchResponse(BaseModel):
         }
 
 
+class ReceiptEditHistory(BaseModel):
+    """Edit history entry for a receipt field"""
+    id: int
+    field_name: str
+    field_name_hebrew: Optional[str] = None
+    old_value: Optional[str]
+    new_value: Optional[str]
+    edited_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class ReceiptHistoryResponse(BaseModel):
+    """Complete edit history for a receipt"""
+    receipt_id: int
+    edits: List[ReceiptEditHistory]
+    total_edits: int
+
+
