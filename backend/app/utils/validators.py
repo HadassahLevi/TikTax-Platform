@@ -71,7 +71,7 @@ def validate_israeli_phone(phone: str) -> bool:
 
 def validate_business_id(business_id: str) -> bool:
     """
-    Validate Israeli business ID (ח.ב / ע.מ)
+    Validate Israeli business ID (ח.פ / ע.מ)
     
     Args:
         business_id: Business ID to validate
@@ -88,6 +88,20 @@ def validate_business_id(business_id: str) -> bool:
     
     # Use same Luhn algorithm as ID validation
     return validate_israeli_id(digits)
+
+
+def validate_israeli_business_number(business_number: str) -> bool:
+    """
+    Validate Israeli business number (same as business_id)
+    Alias for validate_business_id for clearer naming in OCR context
+    
+    Args:
+        business_number: Business number to validate (ח.פ / ע.מ)
+        
+    Returns:
+        True if valid, False otherwise
+    """
+    return validate_business_id(business_number)
 
 
 def validate_email(email: str) -> bool:
