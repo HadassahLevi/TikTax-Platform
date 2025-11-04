@@ -4,7 +4,8 @@ Validation utilities for Israeli-specific data
 """
 
 import re
-from typing import Optional
+from typing import Optional, Tuple
+from datetime import datetime, timedelta
 
 
 def validate_israeli_id(id_number: str) -> bool:
@@ -141,3 +142,138 @@ def validate_password_strength(password: str) -> tuple[bool, Optional[str]]:
         return False, "הסיסמה חייבת להכיל לפחות ספרה אחת"
     
     return True, None
+
+
+def calculate_vat(total_amount: float, vat_rate: float = 0.17) -> Tuple[float, float, float]:
+    """
+    Calculate VAT breakdown from total amount
+    Israeli VAT rate: 17% (as of 2023)
+    
+    Args:
+        total_amount: Total amount including VAT
+        vat_rate: VAT rate (default 0.17 = 17%)
+    
+    Returns:
+        Tuple of (pre_vat, vat, total)
+    """
+    pre_vat = round(total_amount / (1 + vat_rate), 2)
+    vat = round(total_amount - pre_vat, 2)
+    return pre_vat, vat, total_amount
+
+
+def validate_vat_calculation(total: float, vat: float, pre_vat: float, tolerance: float = 0.02) -> bool:
+    """
+    Validate that VAT calculation is correct
+    Allows for small rounding differences (tolerance)
+    
+    Args:
+        total: Total amount
+        vat: VAT amount
+        pre_vat: Amount before VAT
+        tolerance: Allowed difference for rounding (default ±0.02)
+    
+    Returns:
+        True if calculation is valid, False otherwise
+    """
+    expected_total = pre_vat + vat
+    return abs(expected_total - total) <= tolerance
+
+
+def is_valid_receipt_date(date: datetime) -> bool:
+    """
+    Validate receipt date is reasonable
+    Not in future, not older than 7 years (Israeli tax law)
+    
+    Args:
+        date: Receipt date to validate
+    
+    Returns:
+        True if valid, False otherwise
+    """
+    if date > datetime.now():
+        return False
+    
+    seven_years_ago = datetime.now() - timedelta(days=365 * 7)
+    if date < seven_years_ago:
+        return False
+    
+    return True
+
+
+def normalize_hebrew_text(text: str) -> str:
+    """
+    Normalize Hebrew text for better matching
+    - Remove niqqud (vowel points)
+    - Remove extra spaces
+    - Standardize quotes
+    
+    Args:
+        text: Hebrew text to normalize
+    
+    Returns:
+        Normalized text
+    """
+    if not text:
+        return ""
+    
+    # Remove niqqud (Unicode range U+0591 to U+05C7)
+    text = re.sub(r'[\u0591-\u05C7]', '', text)
+    
+    # Normalize spaces
+    text = ' '.join(text.split())
+    
+    # Standardize quotes
+    text = text.replace('״', '"').replace('׳', "'")
+    
+    return text.strip()
+
+
+def extract_receipt_number(text: str) -> str:
+    """
+    Extract receipt number from text using various patterns
+    
+    Args:
+        text: Text containing receipt number
+    
+    Returns:
+        Extracted receipt number or empty string
+    """
+    patterns = [
+        r'(?:קבלה|receipt).*?(\d{4,})',
+        r'(?:מס\'|מספר|#)\s*(\d{4,})',
+        r'no\.?\s*(\d{4,})',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    
+    return ""
+
+
+def format_israeli_currency(amount: float) -> str:
+    """
+    Format amount as Israeli currency
+    
+    Args:
+        amount: Amount to format
+    
+    Returns:
+        Formatted currency string (e.g., "₪1,234.56")
+    """
+    return f"₪{amount:,.2f}"
+
+
+def format_israeli_date(date: datetime) -> str:
+    """
+    Format date as DD/MM/YYYY (Israeli standard)
+    
+    Args:
+        date: Date to format
+    
+    Returns:
+        Formatted date string
+    """
+    return date.strftime("%d/%m/%Y")
+

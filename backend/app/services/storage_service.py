@@ -217,5 +217,3 @@ class StorageService:
 
 # Global storage service instance
 storage_service = StorageService()
-        # TODO: Implement presigned URL generation
-        pass

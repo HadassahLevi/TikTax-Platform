@@ -3,7 +3,7 @@ Receipt Service
 Handles receipt processing pipeline, storage, and management
 """
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import logging
@@ -11,7 +11,12 @@ import logging
 from app.models.receipt import Receipt, ReceiptStatus
 from app.models.category import Category
 from app.services.ocr_service import ocr_service
-from app.utils.validators import validate_israeli_business_number
+from app.utils.validators import (
+    validate_israeli_business_number,
+    validate_vat_calculation,
+    calculate_vat,
+    is_valid_receipt_date
+)
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +200,93 @@ class ReceiptService:
             return True
         
         return False
+    
+    async def validate_receipt_data(self, receipt: Receipt) -> Tuple[bool, list]:
+        """
+        Validate receipt data quality
+        Returns warnings for data issues
+        
+        Args:
+            receipt: Receipt object to validate
+        
+        Returns:
+            Tuple of (is_valid, list_of_warnings)
+        """
+        warnings = []
+        
+        # Validate business number
+        if receipt.business_number:
+            if not validate_israeli_business_number(receipt.business_number):
+                warnings.append("מספר עוסק מורשה לא תקין")
+        
+        # Validate date
+        if receipt.receipt_date:
+            if not is_valid_receipt_date(receipt.receipt_date):
+                if receipt.receipt_date > datetime.now():
+                    warnings.append("תאריך הקבלה בעתיד - לא חוקי")
+                else:
+                    warnings.append("תאריך הקבלה ישן מדי (מעל 7 שנים)")
+        
+        # Validate VAT calculation
+        if all([receipt.total_amount, receipt.vat_amount, receipt.pre_vat_amount]):
+            if not validate_vat_calculation(
+                receipt.total_amount,
+                receipt.vat_amount,
+                receipt.pre_vat_amount
+            ):
+                warnings.append("חישוב מע״מ לא מדויק - נדרש אימות")
+        
+        # Check confidence scores
+        if receipt.ocr_data and receipt.ocr_data.get("parsed_data"):
+            parsed_data = receipt.ocr_data["parsed_data"]
+            if "confidence" in parsed_data:
+                confidences = parsed_data["confidence"]
+                low_confidence_fields = [
+                    field for field, conf in confidences.items()
+                    if conf < 0.7
+                ]
+                if low_confidence_fields:
+                    field_names_hebrew = {
+                        "vendor_name": "שם העסק",
+                        "total_amount": "סכום כולל",
+                        "receipt_date": "תאריך",
+                        "business_number": "ח.פ",
+                        "vat_amount": "מע״מ",
+                    }
+                    hebrew_fields = [
+                        field_names_hebrew.get(f, f) for f in low_confidence_fields
+                    ]
+                    warnings.append(f"דיוק נמוך בשדות: {', '.join(hebrew_fields)}")
+        
+        # Check for missing critical fields
+        if not receipt.vendor_name:
+            warnings.append("חסר שם עסק")
+        
+        if not receipt.total_amount or receipt.total_amount <= 0:
+            warnings.append("סכום לא תקין")
+        
+        if not receipt.receipt_date:
+            warnings.append("חסר תאריך קבלה")
+        
+        is_valid = len(warnings) == 0
+        return is_valid, warnings
+    
+    async def recalculate_vat(self, receipt: Receipt) -> None:
+        """
+        Recalculate VAT if amounts don't match
+        Uses Israeli VAT rate (17%)
+        
+        Args:
+            receipt: Receipt object to recalculate
+        """
+        if receipt.total_amount and receipt.total_amount > 0:
+            pre_vat, vat, total = calculate_vat(receipt.total_amount)
+            receipt.pre_vat_amount = pre_vat
+            receipt.vat_amount = vat
+            logger.info(
+                f"Recalculated VAT for receipt {receipt.id}: "
+                f"Pre-VAT={pre_vat}, VAT={vat}, Total={total}"
+            )
     
     @staticmethod
     def create_receipt(db: Session, user_id: str, **kwargs) -> Receipt:
