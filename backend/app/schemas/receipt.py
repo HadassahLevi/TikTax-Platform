@@ -4,7 +4,7 @@ Request/response models for receipt operations
 """
 
 from pydantic import BaseModel, Field, validator
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 
@@ -152,3 +152,133 @@ class ReceiptResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class ReceiptUpdate(BaseModel):
+    """Receipt update schema for review process"""
+    vendor_name: Optional[str] = Field(None, min_length=1, max_length=200)
+    business_number: Optional[str] = Field(None, min_length=9, max_length=9)
+    receipt_number: Optional[str] = Field(None, max_length=50)
+    receipt_date: Optional[datetime] = None
+    total_amount: Optional[float] = Field(None, gt=0)
+    vat_amount: Optional[float] = Field(None, ge=0)
+    pre_vat_amount: Optional[float] = Field(None, ge=0)
+    category_id: Optional[int] = None
+    notes: Optional[str] = Field(None, max_length=500)
+    
+    @validator('business_number')
+    def validate_business_number(cls, v):
+        """Validate Israeli business number format"""
+        if v and not v.isdigit():
+            raise ValueError('מספר עסק חייב להכיל ספרות בלבד')
+        if v and len(v) != 9:
+            raise ValueError('מספר עסק חייב להכיל 9 ספרות')
+        return v
+
+
+class ReceiptApprove(BaseModel):
+    """Data for final approval"""
+    vendor_name: str = Field(..., min_length=1, max_length=200)
+    business_number: Optional[str] = Field(None, min_length=9, max_length=9)
+    receipt_number: Optional[str] = Field(None, max_length=50)
+    receipt_date: datetime
+    total_amount: float = Field(..., gt=0)
+    category_id: int
+    notes: Optional[str] = Field(None, max_length=500)
+    
+    @validator('business_number')
+    def validate_business_number(cls, v):
+        """Validate Israeli business number format"""
+        if v and not v.isdigit():
+            raise ValueError('מספר עסק חייב להכיל ספרות בלבד')
+        if v and len(v) != 9:
+            raise ValueError('מספר עסק חייב להכיל 9 ספרות')
+        return v
+
+
+class ReceiptDetail(BaseModel):
+    """Detailed receipt data with joined category name"""
+    id: int
+    user_id: int
+    original_filename: str
+    file_url: str
+    file_size: int
+    
+    vendor_name: Optional[str]
+    business_number: Optional[str]
+    receipt_number: Optional[str]
+    receipt_date: Optional[datetime]
+    
+    total_amount: Optional[float]
+    vat_amount: Optional[float]
+    pre_vat_amount: Optional[float]
+    
+    category_id: Optional[int]
+    category_name: Optional[str]  # Joined from Category
+    
+    status: ReceiptStatus
+    confidence_score: Optional[float]
+    
+    is_digitally_signed: bool
+    is_duplicate: bool
+    duplicate_of_id: Optional[int]
+    
+    notes: Optional[str]
+    
+    created_at: datetime
+    updated_at: datetime
+    approved_at: Optional[datetime]
+    
+    class Config:
+        from_attributes = True
+
+
+class ReceiptListItem(BaseModel):
+    """Minimal receipt data for list views"""
+    id: int
+    vendor_name: Optional[str]
+    receipt_date: Optional[datetime]
+    total_amount: Optional[float]
+    category_name: Optional[str]
+    status: ReceiptStatus
+    is_duplicate: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class ReceiptListResponse(BaseModel):
+    """Paginated receipt list response"""
+    receipts: List[ReceiptListItem]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+class ReceiptFilterParams(BaseModel):
+    """Filter parameters for receipt listing"""
+    # Date range
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    
+    # Categories (comma-separated IDs)
+    category_ids: Optional[str] = None
+    
+    # Amount range
+    amount_min: Optional[float] = None
+    amount_max: Optional[float] = None
+    
+    # Status
+    status: Optional[ReceiptStatus] = None
+    
+    # Search
+    search_query: Optional[str] = None
+
+
+class ReceiptSortParams(BaseModel):
+    """Sort parameters for receipt listing"""
+    sort_by: str = Field(default="created_at", pattern="^(created_at|receipt_date|total_amount|vendor_name)$")
+    sort_order: str = Field(default="desc", pattern="^(asc|desc)$")
+

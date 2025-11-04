@@ -3,9 +3,10 @@ Receipt endpoints
 CRUD operations for receipts with secure file upload
 """
 
-from typing import List
-from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, status, BackgroundTasks
+from typing import List, Optional
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, status, BackgroundTasks, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, and_, func
 from datetime import datetime
 import logging
 
@@ -15,10 +16,16 @@ from app.schemas.receipt import (
     ReceiptCreate, 
     ReceiptUpdate,
     ReceiptUploadResponse,
-    ReceiptProcessingStatus
+    ReceiptProcessingStatus,
+    ReceiptDetail,
+    ReceiptListItem,
+    ReceiptListResponse,
+    ReceiptApprove
 )
 from app.models.user import User
 from app.models.receipt import Receipt, ReceiptStatus
+from app.models.category import Category
+from app.models.receipt_edit import ReceiptEdit
 from app.services.storage_service import storage_service
 from app.services.ocr_service import ocr_service
 from app.services.receipt_service import receipt_service
@@ -179,59 +186,365 @@ async def get_processing_status(
     )
 
 
-@router.get("/", response_model=List[ReceiptResponse])
-async def get_receipts(
-    skip: int = 0,
-    limit: int = 50,
-    category_id: str = None,
-    start_date: str = None,
-    end_date: str = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+@router.get("/", response_model=ReceiptListResponse)
+async def list_receipts(
+    page: int = Query(default=1, ge=1, description="Page number"),
+    page_size: int = Query(default=20, ge=1, le=100, description="Items per page"),
+    date_from: Optional[datetime] = Query(None, description="Filter by start date"),
+    date_to: Optional[datetime] = Query(None, description="Filter by end date"),
+    category_ids: Optional[str] = Query(None, description="Comma-separated category IDs"),
+    amount_min: Optional[float] = Query(None, ge=0, description="Minimum amount"),
+    amount_max: Optional[float] = Query(None, ge=0, description="Maximum amount"),
+    status: Optional[ReceiptStatus] = Query(None, description="Filter by status"),
+    search_query: Optional[str] = Query(None, description="Search in vendor/receipt number"),
+    sort_by: str = Query(default="created_at", description="Sort field"),
+    sort_order: str = Query(default="desc", description="Sort order (asc/desc)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
-    Get user's receipts with filtering and pagination
+    List user's receipts with filtering, sorting, and pagination
+    
+    Filters:
+    - date_from/date_to: Filter by receipt date range
+    - category_ids: Filter by categories (comma-separated IDs)
+    - amount_min/amount_max: Filter by amount range
+    - status: Filter by processing status
+    - search_query: Search in vendor name, receipt number, business number
+    
+    Sorting:
+    - sort_by: created_at, receipt_date, total_amount, vendor_name
+    - sort_order: asc, desc
+    
+    Returns:
+        Paginated list of receipts with total count
     """
-    # TODO: Implement receipt listing with filters
-    pass
+    # Base query - only user's receipts
+    query = db.query(Receipt).filter(Receipt.user_id == current_user.id)
+    
+    # Apply date filters
+    if date_from:
+        query = query.filter(Receipt.receipt_date >= date_from)
+    if date_to:
+        query = query.filter(Receipt.receipt_date <= date_to)
+    
+    # Apply category filter
+    if category_ids:
+        try:
+            cat_ids = [int(id.strip()) for id in category_ids.split(',')]
+            query = query.filter(Receipt.category_id.in_(cat_ids))
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="מזהי קטגוריות לא תקינים"
+            )
+    
+    # Apply amount filters
+    if amount_min is not None:
+        query = query.filter(Receipt.total_amount >= amount_min)
+    if amount_max is not None:
+        query = query.filter(Receipt.total_amount <= amount_max)
+    
+    # Apply status filter
+    if status:
+        query = query.filter(Receipt.status == status)
+    
+    # Apply search query
+    if search_query:
+        search_term = f"%{search_query}%"
+        query = query.filter(
+            or_(
+                Receipt.vendor_name.ilike(search_term),
+                Receipt.receipt_number.ilike(search_term),
+                Receipt.business_number.ilike(search_term)
+            )
+        )
+    
+    # Count total before pagination
+    total = query.count()
+    
+    # Apply sorting
+    sort_column = getattr(Receipt, sort_by, Receipt.created_at)
+    if sort_order == "desc":
+        query = query.order_by(sort_column.desc())
+    else:
+        query = query.order_by(sort_column.asc())
+    
+    # Apply pagination
+    offset = (page - 1) * page_size
+    receipts = query.offset(offset).limit(page_size).all()
+    
+    # Build response with category names
+    receipt_list = []
+    for receipt in receipts:
+        category_name = None
+        if receipt.category_id:
+            category = db.query(Category).filter(Category.id == receipt.category_id).first()
+            if category:
+                category_name = category.name_hebrew
+        
+        receipt_list.append(ReceiptListItem(
+            id=receipt.id,
+            vendor_name=receipt.vendor_name,
+            receipt_date=receipt.receipt_date,
+            total_amount=receipt.total_amount,
+            category_name=category_name,
+            status=receipt.status,
+            is_duplicate=receipt.is_duplicate,
+            created_at=receipt.created_at
+        ))
+    
+    pages = (total + page_size - 1) // page_size
+    
+    logger.info(f"Listed {len(receipt_list)} receipts for user {current_user.id} (page {page}/{pages})")
+    
+    return ReceiptListResponse(
+        receipts=receipt_list,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=pages
+    )
 
 
-@router.get("/{receipt_id}", response_model=ReceiptResponse)
+@router.get("/{receipt_id}", response_model=ReceiptDetail)
 async def get_receipt(
     receipt_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
-    Get single receipt by ID
+    Get single receipt details
+    
+    Returns full receipt data including category name
     """
-    # TODO: Implement get receipt
-    pass
+    receipt = db.query(Receipt).filter(
+        Receipt.id == receipt_id,
+        Receipt.user_id == current_user.id
+    ).first()
+    
+    if not receipt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="קבלה לא נמצאה"
+        )
+    
+    # Get category name
+    category_name = None
+    if receipt.category_id:
+        category = db.query(Category).filter(Category.id == receipt.category_id).first()
+        if category:
+            category_name = category.name_hebrew
+    
+    receipt_dict = {
+        **receipt.__dict__,
+        "category_name": category_name
+    }
+    
+    logger.info(f"Retrieved receipt {receipt_id} for user {current_user.id}")
+    
+    return ReceiptDetail(**receipt_dict)
 
 
-@router.put("/{receipt_id}", response_model=ReceiptResponse)
+@router.put("/{receipt_id}", response_model=ReceiptDetail)
 async def update_receipt(
     receipt_id: int,
-    receipt_data: ReceiptUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    update_data: ReceiptUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
-    Update receipt details
-    Tracks edit history
+    Update receipt data (during review process)
+    
+    Records edit history for all changes
+    Can only edit receipts in REVIEW or DUPLICATE status
+    Recalculates VAT if amounts changed
     """
-    # TODO: Implement receipt update
-    pass
+    receipt = db.query(Receipt).filter(
+        Receipt.id == receipt_id,
+        Receipt.user_id == current_user.id
+    ).first()
+    
+    if not receipt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="קבלה לא נמצאה"
+        )
+    
+    # Can only edit receipts in REVIEW or DUPLICATE status
+    if receipt.status not in [ReceiptStatus.REVIEW, ReceiptStatus.DUPLICATE]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="לא ניתן לערוך קבלה שאושרה או נכשלה"
+        )
+    
+    # Track changes for edit history
+    changes_made = False
+    for field, new_value in update_data.dict(exclude_unset=True).items():
+        if new_value is not None:
+            old_value = getattr(receipt, field)
+            if old_value != new_value:
+                # Record edit
+                edit = ReceiptEdit(
+                    receipt_id=receipt.id,
+                    user_id=current_user.id,
+                    field_name=field,
+                    old_value=str(old_value) if old_value else None,
+                    new_value=str(new_value)
+                )
+                db.add(edit)
+                
+                # Update field
+                setattr(receipt, field, new_value)
+                changes_made = True
+    
+    # Recalculate VAT if amounts changed
+    if any([update_data.total_amount, update_data.vat_amount, update_data.pre_vat_amount]):
+        await receipt_service.recalculate_vat(receipt)
+    
+    if changes_made:
+        receipt.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(receipt)
+        logger.info(f"Receipt {receipt_id} updated by user {current_user.id}")
+    
+    return await get_receipt(receipt_id, current_user, db)
 
 
-@router.delete("/{receipt_id}", status_code=204)
+@router.post("/{receipt_id}/approve", response_model=ReceiptDetail)
+async def approve_receipt(
+    receipt_id: int,
+    approve_data: ReceiptApprove,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Approve receipt (final submission)
+    
+    Validates all required fields are present
+    Updates status to APPROVED
+    Records approval timestamp
+    """
+    receipt = db.query(Receipt).filter(
+        Receipt.id == receipt_id,
+        Receipt.user_id == current_user.id
+    ).first()
+    
+    if not receipt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="קבלה לא נמצאה"
+        )
+    
+    if receipt.status != ReceiptStatus.REVIEW:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="לא ניתן לאשר קבלה שכבר אושרה"
+        )
+    
+    # Update with approved data
+    receipt.vendor_name = approve_data.vendor_name
+    receipt.business_number = approve_data.business_number
+    receipt.receipt_number = approve_data.receipt_number
+    receipt.receipt_date = approve_data.receipt_date
+    receipt.total_amount = approve_data.total_amount
+    receipt.category_id = approve_data.category_id
+    receipt.notes = approve_data.notes
+    
+    # Recalculate VAT
+    await receipt_service.recalculate_vat(receipt)
+    
+    # Update status
+    receipt.status = ReceiptStatus.APPROVED
+    receipt.approved_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(receipt)
+    
+    logger.info(f"Receipt {receipt_id} approved by user {current_user.id}")
+    
+    return await get_receipt(receipt_id, current_user, db)
+
+
+@router.delete("/{receipt_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_receipt(
     receipt_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
-    Soft delete receipt
+    Delete receipt
+    
+    Deletes file from S3 storage
+    Removes from database (CASCADE will delete edits)
     """
-    # TODO: Implement receipt deletion
-    pass
+    receipt = db.query(Receipt).filter(
+        Receipt.id == receipt_id,
+        Receipt.user_id == current_user.id
+    ).first()
+    
+    if not receipt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="קבלה לא נמצאה"
+        )
+    
+    # Delete file from S3
+    await storage_service.delete_file(receipt.file_url)
+    
+    # Delete from database (CASCADE will delete edits)
+    db.delete(receipt)
+    db.commit()
+    
+    logger.info(f"Receipt {receipt_id} deleted by user {current_user.id}")
+    
+    return None
+
+
+@router.post("/{receipt_id}/retry", status_code=status.HTTP_202_ACCEPTED)
+async def retry_processing(
+    receipt_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retry OCR processing for failed receipt
+    
+    Can only retry receipts in FAILED status
+    Resets status to PROCESSING and triggers background job
+    """
+    receipt = db.query(Receipt).filter(
+        Receipt.id == receipt_id,
+        Receipt.user_id == current_user.id
+    ).first()
+    
+    if not receipt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="קבלה לא נמצאה"
+        )
+    
+    if receipt.status != ReceiptStatus.FAILED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ניתן לנסות שוב רק קבלות שנכשלו"
+        )
+    
+    # Reset status
+    receipt.status = ReceiptStatus.PROCESSING
+    receipt.processing_started_at = datetime.utcnow()
+    receipt.processing_completed_at = None
+    db.commit()
+    
+    # Retry processing
+    background_tasks.add_task(
+        receipt_service.process_receipt,
+        receipt.id,
+        db
+    )
+    
+    logger.info(f"Retrying processing for receipt {receipt_id}")
+    
+    return {"message": "מעבד מחדש את הקבלה"}
+
