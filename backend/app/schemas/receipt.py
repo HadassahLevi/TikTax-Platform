@@ -282,3 +282,78 @@ class ReceiptSortParams(BaseModel):
     sort_by: str = Field(default="created_at", pattern="^(created_at|receipt_date|total_amount|vendor_name)$")
     sort_order: str = Field(default="desc", pattern="^(asc|desc)$")
 
+
+class DuplicateCheckRequest(BaseModel):
+    """Request to check if receipt is a duplicate"""
+    vendor_name: str = Field(..., min_length=1, max_length=200)
+    receipt_date: datetime
+    total_amount: float = Field(..., gt=0)
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "vendor_name": "סופר מרקט",
+                "receipt_date": "2024-11-01T10:30:00",
+                "total_amount": 150.50
+            }
+        }
+
+
+class DuplicateCheckResponse(BaseModel):
+    """Response from duplicate check"""
+    is_duplicate: bool
+    duplicate_receipt_id: Optional[int] = None
+    similarity_score: float = Field(..., ge=0, le=100, description="Similarity percentage 0-100")
+    message: str
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "is_duplicate": True,
+                "duplicate_receipt_id": 123,
+                "similarity_score": 95.5,
+                "message": "נמצאה קבלה דומה (95% דמיון)"
+            }
+        }
+
+
+class SearchResult(BaseModel):
+    """Single search result"""
+    receipt_id: int
+    vendor_name: Optional[str]
+    receipt_date: Optional[datetime]
+    total_amount: Optional[float]
+    category_name: Optional[str]
+    relevance_score: float = Field(..., ge=0, description="Relevance score (higher is better)")
+    matched_field: Optional[str] = Field(None, description="Field that matched the query")
+    
+    class Config:
+        from_attributes = True
+
+
+class SearchResponse(BaseModel):
+    """Response from receipt search"""
+    results: List[SearchResult]
+    total: int
+    query: str
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "results": [
+                    {
+                        "receipt_id": 123,
+                        "vendor_name": "סופר מרקט",
+                        "receipt_date": "2024-11-01T10:30:00",
+                        "total_amount": 150.50,
+                        "category_name": "מזון",
+                        "relevance_score": 100.0,
+                        "matched_field": "vendor_name"
+                    }
+                ],
+                "total": 1,
+                "query": "סופר"
+            }
+        }
+
+

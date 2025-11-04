@@ -7,7 +7,8 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, status, BackgroundTasks, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, func
-from datetime import datetime
+from datetime import datetime, timedelta
+from difflib import SequenceMatcher
 import logging
 
 from app.core.dependencies import get_db, get_current_user, check_subscription_limit
@@ -20,7 +21,11 @@ from app.schemas.receipt import (
     ReceiptDetail,
     ReceiptListItem,
     ReceiptListResponse,
-    ReceiptApprove
+    ReceiptApprove,
+    DuplicateCheckRequest,
+    DuplicateCheckResponse,
+    SearchResult,
+    SearchResponse
 )
 from app.models.user import User
 from app.models.receipt import Receipt, ReceiptStatus
@@ -29,6 +34,7 @@ from app.models.receipt_edit import ReceiptEdit
 from app.services.storage_service import storage_service
 from app.services.ocr_service import ocr_service
 from app.services.receipt_service import receipt_service
+from app.utils.text_utils import normalize_hebrew_text
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -547,4 +553,229 @@ async def retry_processing(
     logger.info(f"Retrying processing for receipt {receipt_id}")
     
     return {"message": "מעבד מחדש את הקבלה"}
+
+
+@router.post("/check-duplicate", response_model=DuplicateCheckResponse)
+async def check_duplicate(
+    request: DuplicateCheckRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Check if receipt is likely a duplicate
+    
+    Uses fuzzy matching for vendor names and date/amount proximity:
+    - Date range: ±1 day from provided date
+    - Amount tolerance: ±5% of provided amount
+    - Vendor name similarity: 80%+ threshold for duplicate
+    
+    Args:
+        request: Receipt details to check (vendor_name, receipt_date, total_amount)
+        
+    Returns:
+        DuplicateCheckResponse with similarity score and potential duplicate ID
+    """
+    # Calculate date range (±1 day)
+    date_range_start = request.receipt_date - timedelta(days=1)
+    date_range_end = request.receipt_date + timedelta(days=1)
+    
+    # Calculate amount range (±5% tolerance)
+    amount_tolerance = request.total_amount * 0.05
+    amount_min = request.total_amount - amount_tolerance
+    amount_max = request.total_amount + amount_tolerance
+    
+    # Query for similar receipts
+    similar_receipts = db.query(Receipt).filter(
+        Receipt.user_id == current_user.id,
+        Receipt.receipt_date >= date_range_start,
+        Receipt.receipt_date <= date_range_end,
+        Receipt.total_amount >= amount_min,
+        Receipt.total_amount <= amount_max,
+        Receipt.status != ReceiptStatus.FAILED
+    ).all()
+    
+    best_match = None
+    highest_similarity = 0.0
+    
+    # Calculate similarity for each potential duplicate
+    for receipt in similar_receipts:
+        if not receipt.vendor_name:
+            continue
+        
+        # Normalize vendor names for comparison
+        vendor1 = normalize_hebrew_text(request.vendor_name)
+        vendor2 = normalize_hebrew_text(receipt.vendor_name)
+        
+        # Calculate string similarity using SequenceMatcher
+        similarity = SequenceMatcher(None, vendor1, vendor2).ratio() * 100
+        
+        # Boost similarity if amounts are very close (within 1%)
+        if receipt.total_amount:
+            amount_diff_percent = abs(receipt.total_amount - request.total_amount) / request.total_amount * 100
+            if amount_diff_percent < 1.0:
+                similarity += 5  # Add bonus for exact amount match
+        
+        # Boost similarity if dates match exactly
+        if receipt.receipt_date and receipt.receipt_date.date() == request.receipt_date.date():
+            similarity += 5  # Add bonus for exact date match
+        
+        # Cap at 100
+        similarity = min(similarity, 100.0)
+        
+        if similarity > highest_similarity:
+            highest_similarity = similarity
+            best_match = receipt
+    
+    # Threshold: 80% similarity = likely duplicate
+    is_duplicate = highest_similarity >= 80.0
+    
+    if is_duplicate:
+        message = f"נמצאה קבלה דומה ({highest_similarity:.0f}% דמיון)"
+    else:
+        message = "לא נמצאו קבלות דומות"
+    
+    logger.info(
+        f"Duplicate check for user {current_user.id}: "
+        f"similarity={highest_similarity:.1f}%, is_duplicate={is_duplicate}"
+    )
+    
+    return DuplicateCheckResponse(
+        is_duplicate=is_duplicate,
+        duplicate_receipt_id=best_match.id if best_match else None,
+        similarity_score=round(highest_similarity, 1),
+        message=message
+    )
+
+
+@router.get("/search", response_model=SearchResponse)
+async def search_receipts(
+    q: str = Query(..., min_length=2, max_length=100, description="Search query"),
+    limit: int = Query(default=20, ge=1, le=100, description="Maximum results to return"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Full-text search across receipts
+    
+    Searches the following fields:
+    - Vendor name (highest weight)
+    - Receipt number (exact match preferred)
+    - Business number (exact match preferred)
+    - Notes (lower weight)
+    
+    Returns results sorted by relevance score.
+    
+    Args:
+        q: Search query (minimum 2 characters)
+        limit: Maximum number of results to return (1-100)
+        
+    Returns:
+        SearchResponse with results sorted by relevance
+    """
+    search_term = f"%{q}%"
+    
+    # Query receipts matching search term
+    receipts = db.query(Receipt).filter(
+        Receipt.user_id == current_user.id,
+        or_(
+            Receipt.vendor_name.ilike(search_term),
+            Receipt.receipt_number.ilike(search_term),
+            Receipt.business_number.ilike(search_term),
+            Receipt.notes.ilike(search_term)
+        ),
+        Receipt.status != ReceiptStatus.FAILED
+    ).limit(limit).all()
+    
+    # Calculate relevance scores
+    results = []
+    q_lower = q.lower()
+    q_normalized = normalize_hebrew_text(q)
+    
+    for receipt in receipts:
+        score = 0.0
+        matched_field = None
+        
+        # Vendor name match (highest weight: 50 base + 30 prefix bonus)
+        if receipt.vendor_name:
+            vendor_lower = receipt.vendor_name.lower()
+            vendor_normalized = normalize_hebrew_text(receipt.vendor_name)
+            
+            if q_lower in vendor_lower:
+                score += 50
+                matched_field = "vendor_name"
+                
+                # Bonus for prefix match
+                if vendor_lower.startswith(q_lower):
+                    score += 30
+                
+                # Bonus for exact match
+                if vendor_lower == q_lower:
+                    score += 20
+            
+            # Use normalized comparison for Hebrew text
+            if q_normalized and q_normalized in vendor_normalized:
+                if not matched_field:
+                    score += 40
+                    matched_field = "vendor_name"
+        
+        # Receipt number - exact or partial match (weight: 100 exact, 60 partial)
+        if receipt.receipt_number:
+            if q == receipt.receipt_number:
+                score += 100
+                matched_field = "receipt_number"
+            elif q_lower in receipt.receipt_number.lower():
+                score += 60
+                if not matched_field:
+                    matched_field = "receipt_number"
+        
+        # Business number - exact or partial match (weight: 80 exact, 50 partial)
+        if receipt.business_number:
+            if q == receipt.business_number:
+                score += 80
+                matched_field = "business_number"
+            elif q in receipt.business_number:
+                score += 50
+                if not matched_field:
+                    matched_field = "business_number"
+        
+        # Notes match (lower weight: 20)
+        if receipt.notes:
+            notes_lower = receipt.notes.lower()
+            notes_normalized = normalize_hebrew_text(receipt.notes)
+            
+            if q_lower in notes_lower or (q_normalized and q_normalized in notes_normalized):
+                score += 20
+                if not matched_field:
+                    matched_field = "notes"
+        
+        # Get category name
+        category_name = None
+        if receipt.category_id:
+            category = db.query(Category).filter(Category.id == receipt.category_id).first()
+            if category:
+                category_name = category.name_hebrew
+        
+        # Only add to results if score > 0
+        if score > 0:
+            results.append(SearchResult(
+                receipt_id=receipt.id,
+                vendor_name=receipt.vendor_name,
+                receipt_date=receipt.receipt_date,
+                total_amount=receipt.total_amount,
+                category_name=category_name,
+                relevance_score=score,
+                matched_field=matched_field
+            ))
+    
+    # Sort by relevance (highest first)
+    results.sort(key=lambda x: x.relevance_score, reverse=True)
+    
+    logger.info(f"Search query '{q}' for user {current_user.id}: {len(results)} results")
+    
+    return SearchResponse(
+        results=results,
+        total=len(results),
+        query=q
+    )
+
 
