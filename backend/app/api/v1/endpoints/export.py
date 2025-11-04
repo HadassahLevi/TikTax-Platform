@@ -21,6 +21,7 @@ from app.models.category import Category
 from app.schemas.export import ExportRequest, ExportResponse, ExportFormat
 from app.core.dependencies import get_current_user
 from app.services.excel_service import excel_service
+from app.services.pdf_service import pdf_service
 from app.utils.formatters import format_israeli_date
 
 router = APIRouter()
@@ -108,11 +109,17 @@ async def generate_export(
             mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         
         elif request.format == ExportFormat.PDF:
-            # PDF generation (to be implemented)
-            raise HTTPException(
-                status_code=status.HTTP_501_NOT_IMPLEMENTED,
-                detail="ייצוא PDF יהיה זמין בקרוב"
+            # PDF generation with optional images
+            file_content = pdf_service.generate_export(
+                current_user,
+                receipts,
+                categories,
+                request.date_from,
+                request.date_to,
+                include_images=request.include_images
             )
+            filename = f"tiktax_receipts_{request.date_from.strftime('%Y%m%d')}_{request.date_to.strftime('%Y%m%d')}.pdf"
+            mime_type = "application/pdf"
         
         elif request.format == ExportFormat.CSV:
             # CSV generation
