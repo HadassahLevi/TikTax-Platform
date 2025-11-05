@@ -52,12 +52,13 @@ async def lifespan(app: FastAPI):
     # Test database connection
     try:
         from app.db.session import SessionLocal
+        from sqlalchemy import text
         db = SessionLocal()
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db.close()
         logger.info("✅ Database connection successful")
     except Exception as e:
-        logger.error(f"❌ Databasexxxxxxction failed: {e}", exc_info=True)
+        logger.error(f"❌ Database connection failed: {e}", exc_info=True)
         raise
     
     logger.info("✅ Tik-Tax API started successfully")

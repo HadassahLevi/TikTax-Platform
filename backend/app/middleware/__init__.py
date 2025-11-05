@@ -4,9 +4,11 @@ Contains rate limiting, error handling, and logging middleware
 """
 
 from .rate_limit import rate_limit_middleware
-from .error_handler import error_handler_middleware
+from .error_handler import global_exception_handler, tiktax_exception_handler
 
 __all__ = [
     "rate_limit_middleware",
-    "error_handler_middleware",
+    "global_exception_handler",
+    "tiktax_exception_handler",
 ]
+
