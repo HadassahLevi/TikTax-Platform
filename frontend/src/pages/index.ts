@@ -16,3 +16,6 @@ export * from './dashboard';
 
 // Export Pages
 export * from './export';
+
+// Subscription Page
+export { default as SubscriptionPage } from './SubscriptionPage';
