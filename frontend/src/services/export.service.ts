@@ -14,7 +14,7 @@
  * @module services/export.service
  */
 
-import XLSX from 'xlsx';
+import * as XLSX from 'xlsx';
 import { formatCurrency, formatDate } from '@/utils/formatters';
 import type { Receipt } from '@/types/receipt.types';
 import { DEFAULT_CATEGORIES } from '@/types/receipt.types';
