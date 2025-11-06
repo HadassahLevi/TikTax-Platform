@@ -1,7 +1,9 @@
 import { useAuthStore } from '@/stores/auth.store';
 import { useNavigate } from 'react-router-dom';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import type { LoginData, SignupData } from '@/types/auth.types';
+import { authService } from '@/services/auth.service';
+import apiClient from '@/config/axios';
 
 /**
  * Custom hook for authentication
@@ -28,16 +30,15 @@ import type { LoginData, SignupData } from '@/types/auth.types';
  */
 export const useAuth = () => {
   const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   const {
     user,
     isAuthenticated,
-    isLoading,
-    error,
-    login: storeLogin,
-    signup: storeSignup,
-    logout: storeLogout,
-    checkAuth
+    setTokens,
+    setUser,
+    clearAuth
   } = useAuthStore();
 
   /**
@@ -55,9 +56,20 @@ export const useAuth = () => {
    * ```
    */
   const login = useCallback(async (data: LoginData) => {
-    await storeLogin(data);
-    navigate('/dashboard');
-  }, [storeLogin, navigate]);
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await authService.login(data);
+      setTokens(response.accessToken, response.refreshToken);
+      setUser(response.user);
+      navigate('/dashboard');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'שגיאה בהתחברות');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [navigate, setTokens, setUser]);
 
   /**
    * Signup user and redirect to dashboard
@@ -70,16 +82,26 @@ export const useAuth = () => {
    * await signup({
    *   email: 'user@tiktax.co.il',
    *   password: 'securePassword123',
-   *   firstName: 'David',
-   *   lastName: 'Cohen',
+   *   fullName: 'David Cohen',
    *   businessName: 'Cohen Design Studio'
    * });
    * ```
    */
   const signup = useCallback(async (data: SignupData) => {
-    await storeSignup(data);
-    navigate('/dashboard');
-  }, [storeSignup, navigate]);
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await authService.signup(data);
+      setTokens(response.accessToken, response.refreshToken);
+      setUser(response.user);
+      navigate('/dashboard');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'שגיאה בהרשמה');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [navigate, setTokens, setUser]);
 
   /**
    * Logout user and redirect to login
@@ -90,9 +112,121 @@ export const useAuth = () => {
    * ```
    */
   const logout = useCallback(async () => {
-    await storeLogout();
-    navigate('/login');
-  }, [storeLogout, navigate]);
+    setIsLoading(true);
+    try {
+      await authService.logout();
+    } catch (err) {
+      // Silent fail - clear auth anyway
+      console.error('Logout error:', err);
+    } finally {
+      clearAuth();
+      setIsLoading(false);
+      navigate('/login');
+    }
+  }, [navigate, clearAuth]);
+
+  /**
+   * Update user profile
+   * 
+   * @param data - Profile data to update
+   * @throws {Error} If update fails
+   * 
+   * @example
+   * ```tsx
+   * await updateProfile({
+   *   fullName: 'David Cohen',
+   *   phone: '0501234567',
+   *   businessName: 'Cohen Design'
+   * });
+   * ```
+   */
+  const updateProfile = useCallback(async (data: Partial<{
+    fullName: string;
+    businessName: string;
+    businessNumber: string;
+    phone: string;
+  }>) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await apiClient.put('/auth/profile', data);
+      setUser(response.data.user);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'שגיאה בעדכון הפרטים');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [setUser]);
+
+  /**
+   * Change user password
+   * 
+   * @param currentPassword - Current password for verification
+   * @param newPassword - New password to set
+   * @throws {Error} If change fails
+   * 
+   * @example
+   * ```tsx
+   * await changePassword('oldPass123', 'newSecurePass456');
+   * ```
+   */
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await authService.changePassword({
+        currentPassword,
+        newPassword,
+        confirmPassword: newPassword
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'שגיאה בשינוי הסיסמה');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  /**
+   * Delete user account permanently
+   * 
+   * @throws {Error} If deletion fails
+   * 
+   * @example
+   * ```tsx
+   * await deleteAccount();
+   * ```
+   */
+  const deleteAccount = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await apiClient.delete('/auth/account');
+      clearAuth();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'שגיאה במחיקת החשבון');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clearAuth]);
+
+  /**
+   * Check authentication status
+   * Fetches current user data from server
+   */
+  const checkAuth = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const userData = await authService.getCurrentUser();
+      setUser(userData);
+    } catch (err) {
+      clearAuth();
+    } finally {
+      setIsLoading(false);
+    }
+  }, [setUser, clearAuth]);
 
   /**
    * Check if user has specific subscription plan or higher
@@ -110,7 +244,8 @@ export const useAuth = () => {
   const hasPlan = useCallback((plan: 'free' | 'basic' | 'pro' | 'business') => {
     if (!user) return false;
     const planHierarchy = { free: 0, basic: 1, pro: 2, business: 3 };
-    return planHierarchy[user.subscriptionPlan] >= planHierarchy[plan];
+    const userPlan = user.subscriptionPlan || 'free';
+    return planHierarchy[userPlan as keyof typeof planHierarchy] >= planHierarchy[plan];
   }, [user]);
 
   /**
@@ -175,6 +310,9 @@ export const useAuth = () => {
     signup,
     logout,
     checkAuth,
+    updateProfile,
+    changePassword,
+    deleteAccount,
     
     // Helpers
     hasPlan,
