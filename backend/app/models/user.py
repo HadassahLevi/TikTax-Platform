@@ -76,6 +76,7 @@ class User(Base, TimestampMixin):
     
     # Relationships
     receipts = relationship("Receipt", back_populates="user", cascade="all, delete-orphan")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
     
     # Indexes for performance
     __table_args__ = (
@@ -88,4 +89,3 @@ class User(Base, TimestampMixin):
     
     def __repr__(self):
         return f"<User(id={self.id}, email='{self.email}', plan={self.subscription_plan.value})>"
-
