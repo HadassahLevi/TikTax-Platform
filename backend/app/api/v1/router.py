@@ -5,7 +5,7 @@ Aggregates all endpoint routers
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, receipts, users, categories, export, subscriptions, statistics, stripe_webhooks
+from app.api.v1.endpoints import auth, receipts, users, categories, export, subscriptions, statistics, stripe_webhooks, notifications
 
 api_router = APIRouter()
 
@@ -18,3 +18,4 @@ api_router.include_router(export.router, prefix="/export", tags=["Export"])
 api_router.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscriptions"])
 api_router.include_router(statistics.router, prefix="/statistics", tags=["Statistics"])
 api_router.include_router(stripe_webhooks.router, prefix="/stripe", tags=["Stripe Webhooks"])
+api_router.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
