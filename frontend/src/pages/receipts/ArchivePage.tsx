@@ -33,6 +33,8 @@ import type {
   ReceiptSortField,
   ReceiptSortOrder
 } from '@/types/receipt.types';
+import { SkeletonCard, SkeletonList, LoadingSpinner } from '@/components/loading';
+import { useMinimumLoading } from '@/hooks/useMinimumLoading';
 
 /**
  * Archive Page Component
@@ -80,6 +82,10 @@ export const ArchivePage: React.FC = () => {
 
   // Infinite scroll
   useInfiniteScroll(loadMoreReceipts);
+
+  // Use minimum loading time to prevent flash
+  const initialLoading = useMinimumLoading(isLoadingList && receipts.length === 0, 300);
+  const loadingMore = isLoadingList && receipts.length > 0;
 
   // Debounced search
   useEffect(() => {
@@ -138,6 +144,37 @@ export const ArchivePage: React.FC = () => {
       receiptDate.getFullYear() === now.getFullYear()
     );
   });
+
+  // Initial loading state
+  if (initialLoading) {
+    return (
+      <PageContainer title="ארכיון קבלות">
+        {/* Stats bar skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <SkeletonCard variant="stat" />
+          <SkeletonCard variant="stat" />
+          <SkeletonCard variant="stat" />
+        </div>
+
+        {/* Search/Filter Bar Skeleton */}
+        <div className="mb-6 space-y-4 animate-pulse">
+          <div className="h-12 bg-gray-200 rounded-lg"></div>
+          <div className="flex gap-2">
+            <div className="h-10 bg-gray-200 rounded w-24"></div>
+            <div className="h-10 bg-gray-200 rounded w-24"></div>
+            <div className="h-10 bg-gray-200 rounded w-24"></div>
+          </div>
+        </div>
+
+        {/* Receipts Grid Skeleton */}
+        <SkeletonList 
+          count={12} 
+          variant="receipt" 
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+        />
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer
@@ -437,9 +474,9 @@ export const ArchivePage: React.FC = () => {
           )}
 
           {/* Loading more indicator */}
-          {isLoadingList && receipts.length > 0 && (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
+          {loadingMore && (
+            <div className="py-8">
+              <LoadingSpinner text="טוען קבלות נוספות..." />
             </div>
           )}
         </>

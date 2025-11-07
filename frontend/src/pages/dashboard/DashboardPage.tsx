@@ -11,6 +11,8 @@ import Card from '@/components/ui/Card';
 import { useReceipt, useLoadStatistics } from '@/hooks/useReceipt';
 import { useAuth } from '@/hooks/useAuth';
 import { formatAmount, formatDateIL, DEFAULT_CATEGORIES } from '@/types/receipt.types';
+import { SkeletonCard, SkeletonList } from '@/components/loading';
+import { useMinimumLoading } from '@/hooks/useMinimumLoading';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -19,15 +21,46 @@ export const DashboardPage: React.FC = () => {
   
   useLoadStatistics();
   
+  // Use minimum loading time to prevent flash
+  const showLoading = useMinimumLoading(isLoadingStats && !statistics, 300);
+  
   // Refresh statistics on mount
   useEffect(() => {
     fetchStatistics();
   }, []);
   
-  if (isLoadingStats && !statistics) {
+  if (showLoading) {
     return (
-      <PageContainer title="לוח בקרה" loading={true}>
-        <div />
+      <PageContainer title="לוח בקרה">
+        {/* Stat Cards Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <SkeletonCard variant="stat" />
+          <SkeletonCard variant="stat" />
+          <SkeletonCard variant="stat" />
+          <SkeletonCard variant="stat" />
+        </div>
+
+        {/* Main content grid skeleton */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* Chart Skeleton */}
+          <div className="bg-white rounded-lg border border-gray-200 p-6 animate-pulse">
+            <div className="h-6 bg-gray-300 rounded w-48 mb-6"></div>
+            <div className="h-64 bg-gray-200 rounded"></div>
+          </div>
+
+          {/* Recent Receipts Skeleton */}
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <div className="h-6 bg-gray-300 rounded w-32 mb-6 animate-pulse"></div>
+            <SkeletonList count={5} variant="receipt" className="space-y-3" />
+          </div>
+        </div>
+
+        {/* Quick actions skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <SkeletonCard variant="default" />
+          <SkeletonCard variant="default" />
+          <SkeletonCard variant="default" />
+        </div>
       </PageContainer>
     );
   }

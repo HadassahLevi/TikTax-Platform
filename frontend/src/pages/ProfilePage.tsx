@@ -20,6 +20,7 @@ import Input from '@/components/ui/Input';
 import Modal from '@/components/ui/Modal';
 import PageContainer from '@/components/layout/PageContainer';
 import { useToast } from '@/hooks/useToast';
+import { LoadingSpinner } from '@/components/loading/LoadingSpinner';
 import { 
   User, 
   Lock, 
@@ -157,6 +158,19 @@ export const ProfilePage: React.FC = () => {
       navigate('/login');
     }
   };
+  
+  // Loading state for initial data
+  if (!user) {
+    return (
+      <PageContainer title="הגדרות">
+        <div className="max-w-2xl mx-auto">
+          <div className="bg-white rounded-lg border border-gray-200 p-8">
+            <LoadingSpinner size="lg" text="טוען נתונים..." />
+          </div>
+        </div>
+      </PageContainer>
+    );
+  }
   
   return (
     <PageContainer
