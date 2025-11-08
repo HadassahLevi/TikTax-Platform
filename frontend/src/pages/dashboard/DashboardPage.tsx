@@ -8,6 +8,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import PageContainer from '@/components/layout/PageContainer';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
+import { EmptyState } from '@/components/EmptyState';
 import { useReceipt, useLoadStatistics } from '@/hooks/useReceipt';
 import { useAuth } from '@/hooks/useAuth';
 import { formatAmount, formatDateIL, DEFAULT_CATEGORIES } from '@/types/receipt.types';
@@ -71,6 +72,23 @@ export const DashboardPage: React.FC = () => {
         <div className="text-center py-16">
           <p className="text-gray-600">לא ניתן לטעון נתונים</p>
         </div>
+      </PageContainer>
+    );
+  }
+  
+  // Check if user has no receipts at all (empty state)
+  if (statistics.totalReceipts === 0) {
+    return (
+      <PageContainer title="לוח בקרה" subtitle={`שלום, ${user?.fullName || 'משתמש'}`}>
+        <EmptyState
+          icon={Receipt}
+          title="עדיין לא העלית קבלות"
+          description="התחל על ידי העלאת הקבלה הראשונה שלך. תהליך פשוט ומהיר שיעזור לך לנהל את ההוצאות שלך בקלות."
+          actionLabel="העלה קבלה ראשונה"
+          onAction={() => navigate('/receipts/new')}
+          secondaryLabel="למד עוד"
+          onSecondaryAction={() => navigate('/help')}
+        />
       </PageContainer>
     );
   }

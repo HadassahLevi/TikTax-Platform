@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { SubscriptionPage, CheckoutSuccessPage, CheckoutCancelPage } from './pages';
 import { NotificationDemo } from './pages/NotificationDemo';
+import { NotFoundPage, ServerErrorPage, NetworkErrorPage, MaintenancePage } from './pages/errors';
 import { ToastProvider } from './contexts/ToastContext';
 import { LoadingSpinner } from './components/loading/LoadingSpinner';
 
@@ -20,8 +21,6 @@ const PageLoader = () => (
   </div>
 );
 
-// TEMPORARY: Showing SubscriptionPage for testing
-// TODO: Revert to original welcome screen after testing
 function App() {
   return (
     <ToastProvider>
@@ -32,6 +31,12 @@ function App() {
             <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
             <Route path="/checkout/cancel" element={<CheckoutCancelPage />} />
             <Route path="/notification-demo" element={<NotificationDemo />} />
+            
+            {/* Error Pages */}
+            <Route path="/error/500" element={<ServerErrorPage />} />
+            <Route path="/error/network" element={<NetworkErrorPage />} />
+            <Route path="/maintenance" element={<MaintenancePage />} />
+            
             {/* 
             TODO: Uncomment when implementing full routing:
             <Route path="/dashboard" element={<DashboardPage />} />
@@ -39,6 +44,9 @@ function App() {
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/export" element={<ExportPage />} />
             */}
+            
+            {/* 404 Fallback - must be last */}
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Suspense>
       </BrowserRouter>

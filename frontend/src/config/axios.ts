@@ -81,6 +81,12 @@ axiosInstance.interceptors.response.use(
         url: originalRequest?.url,
         message: error.message,
       });
+      
+      // Redirect to network error page
+      if (typeof window !== 'undefined') {
+        window.location.href = '/error/network';
+      }
+      
       return Promise.reject(error);
     }
 
@@ -141,6 +147,18 @@ axiosInstance.interceptors.response.use(
       console.error('❌ Resource Not Found (404):', originalRequest?.url);
     }
 
+    // Handle 503 Service Unavailable - Maintenance mode
+    if (status === 503) {
+      console.warn('⚠️ Maintenance Mode (503)');
+      
+      // Redirect to maintenance page
+      if (typeof window !== 'undefined') {
+        window.location.href = '/maintenance';
+      }
+      
+      return Promise.reject(error);
+    }
+
     // Handle 500 Server Error
     if (status >= 500) {
       console.error('❌ Server Error:', {
@@ -148,6 +166,13 @@ axiosInstance.interceptors.response.use(
         url: originalRequest?.url,
         message: error.response.data,
       });
+      
+      // Redirect to server error page
+      if (typeof window !== 'undefined') {
+        window.location.href = '/error/500';
+      }
+      
+      return Promise.reject(error);
     }
 
     return Promise.reject(error);

@@ -11,9 +11,11 @@ import {
   Tag,
   X,
   Download,
-  Plus
+  Plus,
+  Receipt as ReceiptIcon
 } from 'lucide-react';
 import { PageContainer } from '@/components/layout/PageContainer';
+import { EmptyState } from '@/components/EmptyState';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Card from '@/components/ui/Card';
@@ -325,28 +327,40 @@ export const ArchivePage: React.FC = () => {
 
       {/* Receipts grid/list */}
       {receipts.length === 0 && !isLoadingList ? (
-        <div className="flex flex-col items-center justify-center py-16">
-          <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-            <Search size={48} className="text-gray-400" />
-          </div>
-          <h3 className="text-xl font-600 text-gray-900 mb-2">
-            לא נמצאו קבלות
-          </h3>
-          <p className="text-gray-600 mb-6 text-center max-w-md">
-            {hasActiveFilters() || searchQuery
-              ? 'נסה לשנות את קריטריוני החיפוש או הסינון'
-              : 'התחל על ידי הוספת הקבלה הראשונה שלך'}
-          </p>
-          {!hasActiveFilters() && !searchQuery && (
-            <Button
-              variant="primary"
-              onClick={() => navigate('/receipts/new')}
-              icon={<Plus size={20} />}
-            >
-              הוסף קבלה ראשונה
-            </Button>
+        <>
+          {/* No receipts at all */}
+          {!searchQuery && !hasActiveFilters() && (
+            <EmptyState
+              icon={ReceiptIcon}
+              title="הארכיון ריק"
+              description="לאחר שתאשר קבלות, הן יופיעו כאן. התחל על ידי העלאת קבלה חדשה."
+              actionLabel="העלה קבלה"
+              onAction={() => navigate('/receipts/new')}
+            />
           )}
-        </div>
+
+          {/* No search results */}
+          {searchQuery && !hasActiveFilters() && (
+            <EmptyState
+              icon={Search}
+              title="לא נמצאו תוצאות"
+              description={`לא מצאנו קבלות התואמות את החיפוש "${searchQuery}"`}
+              actionLabel="נקה חיפוש"
+              onAction={() => setSearchQuery('')}
+            />
+          )}
+
+          {/* No results after filtering */}
+          {hasActiveFilters() && (
+            <EmptyState
+              icon={Filter}
+              title="אין קבלות בסינון זה"
+              description="נסה להרחיב את הפילטרים או לבחור טווח תאריכים אחר"
+              actionLabel="נקה פילטרים"
+              onAction={handleClearFilters}
+            />
+          )}
+        </>
       ) : (
         <>
           {viewMode === 'grid' ? (
