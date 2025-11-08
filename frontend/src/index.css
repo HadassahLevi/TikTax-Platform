@@ -6,6 +6,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Custom styles for animations and accessibility */
+@import './styles/animations.css';
+@import './styles/accessibility.css';
+
+/* iOS 100vh fix */
+:root {
+  --vh: 1vh;
+}
+
 /* Base styles */
 @layer base {
   body {
@@ -34,4 +43,87 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+}
+
+/* ===================================
+   BROWSER COMPATIBILITY FIXES
+   =================================== */
+
+/* iOS 100vh support */
+.min-h-screen {
+  min-height: 100vh;
+  min-height: calc(var(--vh, 1vh) * 100);
+}
+
+/* iOS safe area support */
+@supports (padding: max(0px)) {
+  .safe-area-top {
+    padding-top: max(1rem, env(safe-area-inset-top));
+  }
+  
+  .safe-area-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  
+  .safe-area-left {
+    padding-left: max(1rem, env(safe-area-inset-left));
+  }
+  
+  .safe-area-right {
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+}
+
+/* Prevent iOS input zoom */
+@media screen and (max-width: 768px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="tel"],
+  input[type="number"],
+  input[type="date"],
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* Smooth scroll */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Safari-specific flexbox fix */
+.safari .flex-container {
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+
+/* Android keyboard open adjustments */
+body.keyboard-open {
+  height: 100vh;
+  overflow: hidden;
+}
+
+body.keyboard-open .bottom-nav {
+  display: none;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
 }

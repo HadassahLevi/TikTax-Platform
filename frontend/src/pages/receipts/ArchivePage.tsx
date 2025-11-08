@@ -223,11 +223,13 @@ export const ArchivePage: React.FC = () => {
       <div className="flex flex-col md:flex-row gap-3 mb-6">
         <div className="flex-1">
           <Input
+            data-search-input
             type="search"
             placeholder="חפש לפי שם עסק, מספר קבלה..."
             value={searchQuery}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
             icon={<Search size={20} />}
+            aria-label="חיפוש קבלות"
           />
         </div>
 

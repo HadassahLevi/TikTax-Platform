@@ -204,7 +204,11 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     };
 
     return (
-      <div className={cn('flex flex-col gap-1.5', fullWidth && 'w-full')}>
+      <div className={cn(
+        'flex flex-col gap-1.5', 
+        fullWidth && 'w-full',
+        hasError && 'shake-error'
+      )}>
         {/* Label */}
         {label && (
           <label

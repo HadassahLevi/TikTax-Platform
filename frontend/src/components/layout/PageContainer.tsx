@@ -140,6 +140,8 @@ export const PageContainer: React.FC<PageContainerProps> = ({
       style={{ width: '100%' }}
     >
       <div
+        id="main-content"
+        role="main"
         className={cn(
           'w-full mx-auto',
           'min-h-[calc(100vh-128px)]', // 64px header + 64px bottom nav

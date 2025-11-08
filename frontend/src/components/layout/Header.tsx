@@ -4,6 +4,9 @@ import { Menu, Receipt } from 'lucide-react';
 import { cn } from '@/utils/formatters';
 import { UserDropdown } from './UserDropdown';
 import { MobileMenu } from './MobileMenu';
+import { Breadcrumbs } from '@/components/Breadcrumbs';
+import { KeyboardShortcutsModal } from '@/components/KeyboardShortcutsModal';
+import { NotificationCenter } from '@/components/NotificationCenter';
 
 interface NavigationItem {
   label: string;
@@ -67,12 +70,16 @@ export const Header: React.FC<HeaderProps> = ({ className }) => {
       <header
         className={cn(
           'sticky top-0 z-40',
-          'h-16 bg-white border-b border-gray-200 shadow-sm',
+          'bg-white border-b border-gray-200 shadow-sm',
           'transition-shadow duration-200',
           className
         )}
       >
-        <div className="flex items-center justify-between h-full px-4 md:px-6 lg:px-8 max-w-screen-2xl mx-auto">
+        <div className="max-w-screen-2xl mx-auto px-4 md:px-6 lg:px-8">
+          {/* Breadcrumbs */}
+          <Breadcrumbs />
+          
+          <div className="flex items-center justify-between h-16">
           {/* Left Section (RTL: Right Section) - Logo + Desktop Nav */}
           <div className="flex items-center gap-8">
             {/* Logo */}
@@ -128,8 +135,16 @@ export const Header: React.FC<HeaderProps> = ({ className }) => {
             </nav>
           </div>
 
-          {/* Right Section (RTL: Left Section) - Mobile Menu + Avatar */}
-          <div className="flex items-center gap-4">
+          {/* Right Section (RTL: Left Section) - Actions + User */}
+          <div className="flex items-center gap-2">
+            {/* Keyboard Shortcuts Button (Desktop Only) */}
+            <div className="hidden md:block">
+              <KeyboardShortcutsModal />
+            </div>
+            
+            {/* Notification Center */}
+            <NotificationCenter />
+            
             {/* Mobile Hamburger Menu Button */}
             <button
               onClick={() => setIsMobileMenuOpen(true)}
@@ -147,6 +162,7 @@ export const Header: React.FC<HeaderProps> = ({ className }) => {
             {/* User Avatar Dropdown */}
             <UserDropdown />
           </div>
+        </div>
         </div>
       </header>
 

@@ -1,11 +1,13 @@
 import './App.css';
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { SubscriptionPage, CheckoutSuccessPage, CheckoutCancelPage } from './pages';
 import { NotificationDemo } from './pages/NotificationDemo';
 import { NotFoundPage, ServerErrorPage, NetworkErrorPage, MaintenancePage } from './pages/errors';
 import { ToastProvider } from './contexts/ToastContext';
 import { LoadingSpinner } from './components/loading/LoadingSpinner';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { initBrowserFixes } from '@/utils/browserFixes';
 
 // Lazy load route components for code splitting
 // Uncomment when these routes are active:
@@ -22,6 +24,14 @@ const PageLoader = () => (
 );
 
 function App() {
+  // Initialize keyboard shortcuts
+  useKeyboardShortcuts();
+
+  // Initialize browser fixes
+  useEffect(() => {
+    initBrowserFixes();
+  }, []);
+
   return (
     <ToastProvider>
       <BrowserRouter>
